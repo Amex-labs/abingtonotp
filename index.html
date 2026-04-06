@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Abington OTP Desk</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="page-shell">
+        <section id="login-view" class="login-shell">
+            <div class="login-copy">
+                <p class="eyebrow">Approval Servicing</p>
+                <h1>Abington OTP Desk</h1>
+                <p class="lead">
+                    Generate, review, and manage one-time approval codes from a single secure operations screen.
+                </p>
+                <ul class="feature-list">
+                    <li>Stage-based approval codes with automatic fee mapping</li>
+                    <li>Active queue, completed records, and activity history</li>
+                    <li>Clean mobile layout for inbox review on the phone</li>
+                </ul>
+            </div>
+
+            <form id="login-form" class="auth-card">
+                <p class="eyebrow">Administrative Login</p>
+                <h2>Secure sign in</h2>
+                <label>
+                    Email
+                    <input type="email" name="email" autocomplete="username" placeholder="Administrative inbox email" required>
+                </label>
+                <label>
+                    Password
+                    <input type="password" name="password" autocomplete="current-password" placeholder="Enter password" required>
+                </label>
+                <button type="submit" class="primary-button">Login</button>
+                <p id="login-feedback" class="feedback" hidden></p>
+            </form>
+        </section>
+
+        <main id="dashboard-view" class="dashboard-shell" hidden>
+            <header class="topbar">
+                <div>
+                    <p class="eyebrow">Internal Servicing Preview</p>
+                    <h2>Abington OTP Desk</h2>
+                    <p class="subtle-copy">Approval generation, live queue management, and stage servicing in one place.</p>
+                </div>
+                <div class="topbar-actions">
+                    <button id="seed-button" class="secondary-button" type="button">Seed example</button>
+                    <button id="logout-button" class="primary-button primary-button--ghost" type="button">Logout</button>
+                </div>
+            </header>
+
+            <section class="metrics-grid" aria-label="Metrics">
+                <article class="metric-card">
+                    <span class="eyebrow">Active</span>
+                    <strong id="active-count">0</strong>
+                    <p>Open approval codes available for validation.</p>
+                </article>
+                <article class="metric-card">
+                    <span class="eyebrow">Expiring Soon</span>
+                    <strong id="expiring-count">0</strong>
+                    <p>Codes that reach expiry within the next ten minutes.</p>
+                </article>
+                <article class="metric-card">
+                    <span class="eyebrow">Completed Today</span>
+                    <strong id="completed-count">0</strong>
+                    <p>Approvals closed after successful review or finalization.</p>
+                </article>
+            </section>
+
+            <section class="workspace-grid">
+                <section class="panel panel--generator">
+                    <div class="panel-head">
+                        <div>
+                            <p class="eyebrow">OTP Generator</p>
+                            <h3>Create a new approval code</h3>
+                        </div>
+                    </div>
+
+                    <form id="generator-form" class="generator-form">
+                        <label>
+                            Transfer reference
+                            <input type="text" name="transferId" placeholder="TRX-240619-ABN" required>
+                        </label>
+                        <label>
+                            Client name
+                            <input type="text" name="clientName" placeholder="Gabriele Navisi" required>
+                        </label>
+                        <label>
+                            Recipient
+                            <input type="text" name="recipientName" placeholder="External beneficiary" required>
+                        </label>
+                        <label>
+                            Delivery target
+                            <input type="text" name="deliveryTarget" placeholder="abingtonbank@aol.com" required>
+                        </label>
+                        <label>
+                            Approval stage
+                            <select name="stage" id="stage-select">
+                                <option value="pending">Pending</option>
+                                <option value="processing">Processing</option>
+                                <option value="transferring">Transferring</option>
+                                <option value="successful">Successful</option>
+                            </select>
+                        </label>
+                        <label>
+                            Fee required
+                            <input type="text" name="fee" id="fee-field" value="$200" readonly>
+                        </label>
+                        <label class="field-span-2">
+                            Notes
+                            <textarea name="notes" rows="4" placeholder="Optional servicing notes or instruction"></textarea>
+                        </label>
+                        <div class="form-actions field-span-2">
+                            <button type="submit" class="primary-button">Generate OTP</button>
+                            <p class="subtle-copy">A fresh six-digit code is generated and stored in the approval queue.</p>
+                        </div>
+                    </form>
+                </section>
+
+                <section class="panel">
+                    <div class="panel-head">
+                        <div>
+                            <p class="eyebrow">Queue</p>
+                            <h3>Active approval codes</h3>
+                        </div>
+                    </div>
+                    <div id="active-list" class="record-list"></div>
+                </section>
+
+                <section class="panel">
+                    <div class="panel-head">
+                        <div>
+                            <p class="eyebrow">History</p>
+                            <h3>Recent activity</h3>
+                        </div>
+                    </div>
+                    <div id="history-list" class="record-list"></div>
+                </section>
+            </section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
