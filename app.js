@@ -1,21 +1,23 @@
 const authKey = "abington-otp-auth";
-const storeKey = "abington-otp-records";
+const sourceKey = "abington-otp-source";
+const defaultSourceUrl = "https://abingtonbank.onrender.com";
 
 const adminCredential = {
     email: "abingtonbank@aol.com",
     password: "Inbox!2026"
 };
 
-const stageConfig = {
-    pending: { label: "Pending", fee: 200 },
-    processing: { label: "Processing", fee: 250 },
-    transferring: { label: "Transferring", fee: 350 },
-    successful: { label: "Successful", fee: 500 }
-};
-
 const state = {
     authenticated: false,
-    records: []
+    sourceUrl: defaultSourceUrl,
+    sessions: [],
+    inboxTarget: adminCredential.email,
+    serverStartedAt: "",
+    sessionCount: 0,
+    loading: false,
+    error: "",
+    lastLoadedAt: "",
+    sourceFeedback: ""
 };
 
 function formatMoney(value) {
@@ -27,6 +29,9 @@ function formatMoney(value) {
 }
 
 function formatDateTime(value) {
+    if (!value) {
+        return "Not available";
+    }
     return new Intl.DateTimeFormat("en-US", {
         month: "short",
         day: "numeric",
@@ -35,18 +40,63 @@ function formatDateTime(value) {
     }).format(new Date(value));
 }
 
-function id(prefix) {
-    return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
+function escapeHtml(value) {
+    return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
 }
 
-function createOtp() {
-    return String(Math.floor(100000 + Math.random() * 900000));
+function titleCaseStatus(status) {
+    return String(status || "")
+        .replace(/([A-Z])/g, " $1")
+        .replace(/^./, (character) => character.toUpperCase());
+}
+
+function normalizeBaseUrl(value) {
+    return String(value || "")
+        .trim()
+        .replace(/\/+$/, "");
+}
+
+function buildApiUrl(pathname) {
+    const baseUrl = normalizeBaseUrl(state.sourceUrl || defaultSourceUrl);
+    return new URL(pathname, `${baseUrl}/`).toString();
+}
+
+function toAbsoluteUrl(possiblyRelativeUrl) {
+    if (!possiblyRelativeUrl) {
+        return "#";
+    }
+    try {
+        return new URL(possiblyRelativeUrl, `${normalizeBaseUrl(state.sourceUrl || defaultSourceUrl)}/`).toString();
+    } catch (error) {
+        return "#";
+    }
+}
+
+async function readJsonResponse(response) {
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.ok === false) {
+        throw new Error(payload.error || "The approval inbox could not be loaded.");
+    }
+    return payload;
 }
 
 function setLoginFeedback(message) {
     const target = document.getElementById("login-feedback");
     target.hidden = !message;
     target.textContent = message || "";
+}
+
+function setSourceFeedback(message) {
+    const target = document.getElementById("source-feedback");
+    if (!target) {
+        return;
+    }
+    target.textContent = message || "Christian and Gabriele approvals appear together here when the bank site issues them.";
 }
 
 function saveAuth() {
@@ -69,64 +119,27 @@ function loadAuth() {
     }
 }
 
-function saveRecords() {
-    window.localStorage.setItem(storeKey, JSON.stringify(state.records));
-}
-
-function loadRecords() {
+function saveSource() {
     try {
-        const raw = window.localStorage.getItem(storeKey);
-        state.records = raw ? JSON.parse(raw) : [];
+        window.localStorage.setItem(sourceKey, JSON.stringify({ sourceUrl: state.sourceUrl }));
     } catch (error) {
-        state.records = [];
+        // Ignore storage errors.
     }
 }
 
-function seedRecords() {
-    if (state.records.length) {
-        return;
-    }
-
-    const now = Date.now();
-    state.records = [
-        {
-            id: id("otp"),
-            transferId: "TRX-ABN-40218",
-            clientName: "Gabriele Navisi",
-            recipientName: "Primary External Beneficiary",
-            deliveryTarget: "abingtonbank@aol.com",
-            stage: "pending",
-            fee: 200,
-            code: createOtp(),
-            notes: "Relationship transfer review created from servicing desk.",
-            status: "active",
-            createdAt: new Date(now - 5 * 60 * 1000).toISOString(),
-            expiresAt: new Date(now + 25 * 60 * 1000).toISOString(),
-            history: [
-                { at: new Date(now - 5 * 60 * 1000).toISOString(), event: "Approval created" }
-            ]
-        },
-        {
-            id: id("otp"),
-            transferId: "TRX-ABN-40102",
-            clientName: "Gabriele Navisi",
-            recipientName: "Treasury Settlement",
-            deliveryTarget: "abingtonbank@aol.com",
-            stage: "successful",
-            fee: 500,
-            code: createOtp(),
-            notes: "Final approval archived after completion.",
-            status: "completed",
-            createdAt: new Date(now - 3 * 60 * 60 * 1000).toISOString(),
-            expiresAt: new Date(now - 150 * 60 * 1000).toISOString(),
-            completedAt: new Date(now - 2.5 * 60 * 60 * 1000).toISOString(),
-            history: [
-                { at: new Date(now - 3 * 60 * 60 * 1000).toISOString(), event: "Approval created" },
-                { at: new Date(now - 2.5 * 60 * 60 * 1000).toISOString(), event: "Approval completed" }
-            ]
+function loadSource() {
+    try {
+        const raw = window.localStorage.getItem(sourceKey);
+        if (!raw) {
+            return;
         }
-    ];
-    saveRecords();
+        const saved = JSON.parse(raw);
+        if (saved.sourceUrl) {
+            state.sourceUrl = normalizeBaseUrl(saved.sourceUrl);
+        }
+    } catch (error) {
+        state.sourceUrl = defaultSourceUrl;
+    }
 }
 
 function setView() {
@@ -135,205 +148,269 @@ function setView() {
     saveAuth();
 }
 
-function recordFromForm(formData) {
-    const stage = String(formData.get("stage"));
-    const config = stageConfig[stage];
-    const createdAt = new Date();
-    return {
-        id: id("otp"),
-        transferId: String(formData.get("transferId") || "").trim(),
-        clientName: String(formData.get("clientName") || "").trim(),
-        recipientName: String(formData.get("recipientName") || "").trim(),
-        deliveryTarget: String(formData.get("deliveryTarget") || "").trim(),
-        stage,
-        fee: config.fee,
-        code: createOtp(),
-        notes: String(formData.get("notes") || "").trim(),
-        status: "active",
-        createdAt: createdAt.toISOString(),
-        expiresAt: new Date(createdAt.getTime() + 30 * 60 * 1000).toISOString(),
-        history: [{ at: createdAt.toISOString(), event: "Approval created" }]
-    };
+function getSessionTimestamp(session) {
+    return session.activeChallenge?.createdAt
+        || session.lastReceiptDelivery?.generatedAt
+        || session.challengeHistory?.[0]?.createdAt
+        || "";
+}
+
+function getSortedSessions() {
+    return state.sessions
+        .slice()
+        .sort((left, right) => getSessionTimestamp(right).localeCompare(getSessionTimestamp(left)));
 }
 
 function updateMetrics() {
     const now = Date.now();
-    const active = state.records.filter((record) => record.status === "active");
-    const expiring = active.filter((record) => new Date(record.expiresAt).getTime() - now <= 10 * 60 * 1000).length;
-    const completedToday = state.records.filter((record) => {
-        if (!record.completedAt) {
-            return false;
-        }
-        const completed = new Date(record.completedAt);
-        const today = new Date();
-        return completed.toDateString() === today.toDateString();
+    const active = state.sessions.filter((session) => session.activeChallenge);
+    const expiring = active.filter((session) => {
+        const expiresAt = new Date(session.activeChallenge.expiresAt).getTime();
+        return Number.isFinite(expiresAt) && expiresAt - now <= 10 * 60 * 1000;
     }).length;
+    const archived = state.sessions.filter((session) => !session.activeChallenge && session.challengeHistory?.length).length;
 
     document.getElementById("active-count").textContent = String(active.length);
     document.getElementById("expiring-count").textContent = String(expiring);
-    document.getElementById("completed-count").textContent = String(completedToday);
+    document.getElementById("completed-count").textContent = String(archived);
+}
+
+function renderConnectionPanel() {
+    const sourceUrlInput = document.getElementById("source-url-input");
+    const sourceStatusChip = document.getElementById("source-status-chip");
+    const inboxTarget = document.getElementById("inbox-target");
+    const lastLoaded = document.getElementById("last-loaded");
+    const sessionCount = document.getElementById("session-count");
+    const connectionNote = document.getElementById("connection-note");
+    const refreshButton = document.getElementById("refresh-button");
+
+    if (sourceUrlInput) {
+        sourceUrlInput.value = state.sourceUrl;
+    }
+
+    if (sourceStatusChip) {
+        if (state.loading) {
+            sourceStatusChip.textContent = "Syncing";
+        } else if (state.error) {
+            sourceStatusChip.textContent = "Offline";
+        } else {
+            sourceStatusChip.textContent = "Connected";
+        }
+    }
+
+    if (inboxTarget) {
+        inboxTarget.textContent = state.inboxTarget;
+    }
+    if (lastLoaded) {
+        lastLoaded.textContent = state.lastLoadedAt ? formatDateTime(state.lastLoadedAt) : "Waiting";
+    }
+    if (sessionCount) {
+        sessionCount.textContent = String(state.sessionCount);
+    }
+    if (connectionNote) {
+        connectionNote.textContent = state.error
+            ? state.error
+            : state.serverStartedAt
+                ? `Bank feed online since ${formatDateTime(state.serverStartedAt)}`
+                : "Connected to the live bank approval feed.";
+    }
+    if (refreshButton) {
+        refreshButton.disabled = state.loading;
+        refreshButton.textContent = state.loading ? "Refreshing..." : "Refresh queue";
+    }
+
+    setSourceFeedback(state.sourceFeedback);
 }
 
 function renderActiveList() {
     const container = document.getElementById("active-list");
-    const active = state.records
-        .filter((record) => record.status === "active")
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const active = getSortedSessions().filter((session) => session.activeChallenge);
 
     if (!active.length) {
         container.innerHTML = `
             <article class="record-item">
                 <strong>No active codes</strong>
-                <p class="record-note">Generate a new OTP to populate the live queue.</p>
+                <p class="record-note">When Gabriele or Christian submits a protected transfer, the live approval code will appear here.</p>
             </article>
         `;
         return;
     }
 
-    container.innerHTML = active.map((record) => `
+    container.innerHTML = active.map((session) => `
         <article class="record-item">
             <div class="record-head">
                 <div>
-                    <strong>${record.transferId}</strong>
-                    <p class="record-meta">${record.clientName} to ${record.recipientName}</p>
+                    <strong>${escapeHtml(session.clientName || "Relationship account")}</strong>
+                    <p class="record-meta">${escapeHtml(session.destinationLabel)} • ${escapeHtml(session.railLabel)}</p>
                 </div>
-                <span class="stage-chip">${stageConfig[record.stage].label}</span>
+                <span class="stage-chip">${escapeHtml(titleCaseStatus(session.activeChallenge.stage))}</span>
             </div>
             <div class="record-actions">
-                <span class="record-code">${record.code}</span>
+                <span class="record-code">${escapeHtml(session.activeChallenge.preview?.previewCode || "------")}</span>
                 <div class="record-actions">
-                    <button class="mini-button" type="button" data-copy="${record.id}">Copy code</button>
-                    <button class="mini-button" type="button" data-refresh="${record.id}">Regenerate</button>
-                    <button class="mini-button" type="button" data-complete="${record.id}">Mark complete</button>
+                    <button class="mini-button" type="button" data-copy-transfer="${escapeHtml(session.transferId)}">Copy code</button>
+                    <button class="mini-button" type="button" data-refresh-transfer="${escapeHtml(session.transferId)}" ${state.loading ? "disabled" : ""}>Regenerate</button>
+                    <a class="mini-button mini-button--link" href="${escapeHtml(toAbsoluteUrl(session.activeChallenge.preview?.fileUrl))}" target="_blank" rel="noreferrer">Open preview</a>
                 </div>
             </div>
             <div class="record-grid">
                 <div>
-                    <strong>${formatMoney(record.fee)}</strong>
+                    <strong>${formatMoney(session.activeChallenge.reviewAmount)}</strong>
                     <span>Fee required</span>
                 </div>
                 <div>
-                    <strong>${formatDateTime(record.expiresAt)}</strong>
+                    <strong>${formatDateTime(session.activeChallenge.expiresAt)}</strong>
                     <span>Expires</span>
                 </div>
                 <div>
-                    <strong>${record.deliveryTarget}</strong>
-                    <span>Delivery target</span>
+                    <strong>${formatMoney(session.amount)}</strong>
+                    <span>Transfer amount</span>
                 </div>
                 <div>
-                    <strong>${formatDateTime(record.createdAt)}</strong>
-                    <span>Created</span>
+                    <strong>${escapeHtml(session.approvalRecipient || state.inboxTarget)}</strong>
+                    <span>Inbox target</span>
                 </div>
             </div>
-            <p class="record-note">${record.notes || "No notes added."}</p>
+            <p class="record-note">${escapeHtml(session.receiptId || session.transferId)} • ${escapeHtml(session.clientName || "Relationship account")} approval is waiting for verification.</p>
         </article>
     `).join("");
 }
 
 function renderHistoryList() {
     const container = document.getElementById("history-list");
-    const history = state.records
-        .slice()
-        .sort((a, b) => {
-            const bTime = new Date(b.completedAt || b.createdAt).getTime();
-            const aTime = new Date(a.completedAt || a.createdAt).getTime();
-            return bTime - aTime;
-        })
-        .slice(0, 8);
+    const sessions = getSortedSessions().slice(0, 8);
 
-    if (!history.length) {
+    if (!sessions.length) {
         container.innerHTML = `
             <article class="record-item">
                 <strong>No history yet</strong>
-                <p class="record-note">Generated and completed approvals will appear here.</p>
+                <p class="record-note">The approval desk will show issued and archived transfer sessions once the bank site creates them.</p>
             </article>
         `;
         return;
     }
 
-    container.innerHTML = history.map((record) => `
-        <article class="record-item">
-            <div class="record-head">
-                <div>
-                    <strong>${record.transferId}</strong>
-                    <p class="record-meta">${stageConfig[record.stage].label} approval</p>
+    container.innerHTML = sessions.map((session) => {
+        const stage = titleCaseStatus(session.activeChallenge?.stage || session.challengeHistory?.[0]?.stage || "archived");
+        const statusLabel = session.activeChallenge ? "Active" : "Archived";
+        const previewLink = session.activeChallenge?.preview?.fileUrl
+            ? `<a class="mini-button mini-button--link" href="${escapeHtml(toAbsoluteUrl(session.activeChallenge.preview.fileUrl))}" target="_blank" rel="noreferrer">Open preview</a>`
+            : "";
+        const receiptLink = session.lastReceiptDelivery?.emailPreviewUrl
+            ? `<a class="mini-button mini-button--link" href="${escapeHtml(toAbsoluteUrl(session.lastReceiptDelivery.emailPreviewUrl))}" target="_blank" rel="noreferrer">Open receipt</a>`
+            : "";
+
+        return `
+            <article class="record-item">
+                <div class="record-head">
+                    <div>
+                        <strong>${escapeHtml(session.clientName || "Relationship account")}</strong>
+                        <p class="record-meta">${escapeHtml(session.destinationLabel)} • ${escapeHtml(session.railLabel)}</p>
+                    </div>
+                    <span class="stage-chip">${escapeHtml(statusLabel)}</span>
                 </div>
-                <span class="stage-chip">${record.status === "completed" ? "Completed" : "Active"}</span>
-            </div>
-            <div class="record-grid">
-                <div>
-                    <strong>${record.code}</strong>
-                    <span>Last code</span>
+                <div class="record-grid">
+                    <div>
+                        <strong>${formatMoney(session.amount)}</strong>
+                        <span>Transfer amount</span>
+                    </div>
+                    <div>
+                        <strong>${escapeHtml(stage)}</strong>
+                        <span>Latest stage</span>
+                    </div>
+                    <div>
+                        <strong>${formatDateTime(getSessionTimestamp(session))}</strong>
+                        <span>Last update</span>
+                    </div>
+                    <div>
+                        <strong>${escapeHtml(session.receiptId || session.transferId)}</strong>
+                        <span>Reference</span>
+                    </div>
                 </div>
-                <div>
-                    <strong>${formatMoney(record.fee)}</strong>
-                    <span>Fee amount</span>
+                <p class="record-note">${session.activeChallenge ? "Awaiting live code verification in the connected bank inbox." : "Recent approval session archived from the connected bank inbox."}</p>
+                <div class="record-actions">
+                    ${previewLink}
+                    ${receiptLink}
                 </div>
-                <div>
-                    <strong>${formatDateTime(record.createdAt)}</strong>
-                    <span>Created</span>
-                </div>
-                <div>
-                    <strong>${record.completedAt ? formatDateTime(record.completedAt) : formatDateTime(record.expiresAt)}</strong>
-                    <span>${record.completedAt ? "Completed" : "Expires"}</span>
-                </div>
-            </div>
-            <p class="record-note">${record.notes || "No notes added."}</p>
-        </article>
-    `).join("");
+            </article>
+        `;
+    }).join("");
 }
 
 function renderDashboard() {
+    renderConnectionPanel();
     updateMetrics();
     renderActiveList();
     renderHistoryList();
 }
 
-async function copyCode(idToCopy) {
-    const record = state.records.find((item) => item.id === idToCopy);
-    if (!record) {
+async function refreshDashboard() {
+    state.loading = true;
+    state.error = "";
+    renderDashboard();
+
+    try {
+        const response = await fetch(buildApiUrl("/api/inbox/overview"), {
+            method: "GET",
+            cache: "no-store"
+        });
+        const payload = await readJsonResponse(response);
+        state.sessions = payload.sessions || [];
+        state.inboxTarget = payload.inboxTarget || adminCredential.email;
+        state.serverStartedAt = payload.serverStartedAt || "";
+        state.sessionCount = payload.sessionCount || state.sessions.length;
+        state.lastLoadedAt = new Date().toISOString();
+        state.sourceFeedback = "Connected to the live Abington Bank approval queue.";
+    } catch (error) {
+        state.error = error instanceof Error ? error.message : String(error);
+        state.sessions = [];
+        state.sessionCount = 0;
+        state.sourceFeedback = "The OTP desk could not reach the bank backend. Check the source URL and try again.";
+    } finally {
+        state.loading = false;
+        renderDashboard();
+    }
+}
+
+async function copyCode(transferId) {
+    const session = state.sessions.find((item) => item.transferId === transferId);
+    const code = session?.activeChallenge?.preview?.previewCode;
+    if (!code) {
         return;
     }
     try {
-        await navigator.clipboard.writeText(record.code);
+        await navigator.clipboard.writeText(code);
+        state.sourceFeedback = `Copied the latest code for ${session.clientName || session.transferId}.`;
     } catch (error) {
-        // Ignore clipboard failures in restricted contexts.
+        state.sourceFeedback = "Clipboard access is unavailable in this browser.";
     }
+    renderConnectionPanel();
 }
 
-function regenerateCode(idToRefresh) {
-    const record = state.records.find((item) => item.id === idToRefresh);
-    if (!record) {
-        return;
-    }
-    record.code = createOtp();
-    record.createdAt = new Date().toISOString();
-    record.expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-    record.history.push({ at: new Date().toISOString(), event: "Approval regenerated" });
-    saveRecords();
+async function regenerateCode(transferId) {
+    state.loading = true;
+    state.error = "";
     renderDashboard();
-}
 
-function completeRecord(idToComplete) {
-    const record = state.records.find((item) => item.id === idToComplete);
-    if (!record) {
-        return;
+    try {
+        const response = await fetch(buildApiUrl("/api/inbox/regenerate-otp"), {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ transferId })
+        });
+        await readJsonResponse(response);
+        state.sourceFeedback = "A fresh OTP code was issued from the live bank inbox.";
+    } catch (error) {
+        state.error = error instanceof Error ? error.message : String(error);
+        state.sourceFeedback = "The bank backend could not regenerate the OTP code.";
+    } finally {
+        await refreshDashboard();
     }
-    record.status = "completed";
-    record.completedAt = new Date().toISOString();
-    record.history.push({ at: record.completedAt, event: "Approval completed" });
-    saveRecords();
-    renderDashboard();
 }
 
 function bindEvents() {
-    const stageSelect = document.getElementById("stage-select");
-    const feeField = document.getElementById("fee-field");
-
-    stageSelect.addEventListener("change", () => {
-        feeField.value = formatMoney(stageConfig[stageSelect.value].fee);
-    });
-
     document.getElementById("login-form").addEventListener("submit", (event) => {
         event.preventDefault();
         const formData = new FormData(event.currentTarget);
@@ -346,60 +423,63 @@ function bindEvents() {
         setLoginFeedback("");
         state.authenticated = true;
         setView();
-        renderDashboard();
+        refreshDashboard().catch(() => {
+            // Errors are handled in refreshDashboard.
+        });
     });
 
     document.getElementById("logout-button").addEventListener("click", () => {
         state.authenticated = false;
+        state.error = "";
+        state.sourceFeedback = "";
         setView();
     });
 
-    document.getElementById("seed-button").addEventListener("click", () => {
-        window.localStorage.removeItem(storeKey);
-        state.records = [];
-        seedRecords();
-        loadRecords();
-        renderDashboard();
+    document.getElementById("refresh-button").addEventListener("click", () => {
+        refreshDashboard().catch(() => {
+            // Errors are handled in refreshDashboard.
+        });
     });
 
-    document.getElementById("generator-form").addEventListener("submit", (event) => {
+    document.getElementById("source-form").addEventListener("submit", (event) => {
         event.preventDefault();
         const formData = new FormData(event.currentTarget);
-        const record = recordFromForm(formData);
-        state.records.unshift(record);
-        saveRecords();
-        event.currentTarget.reset();
-        stageSelect.value = "pending";
-        feeField.value = formatMoney(stageConfig.pending.fee);
-        renderDashboard();
+        const sourceUrl = normalizeBaseUrl(formData.get("sourceUrl"));
+        if (!sourceUrl) {
+            state.sourceFeedback = "Enter a valid bank backend URL before saving.";
+            renderConnectionPanel();
+            return;
+        }
+        state.sourceUrl = sourceUrl;
+        saveSource();
+        state.sourceFeedback = "Bank source updated. Refreshing the live approval queue now.";
+        refreshDashboard().catch(() => {
+            // Errors are handled in refreshDashboard.
+        });
     });
 
     document.getElementById("active-list").addEventListener("click", async (event) => {
-        const copyButton = event.target.closest("[data-copy]");
-        const refreshButton = event.target.closest("[data-refresh]");
-        const completeButton = event.target.closest("[data-complete]");
+        const copyButton = event.target.closest("[data-copy-transfer]");
+        const refreshButton = event.target.closest("[data-refresh-transfer]");
 
         if (copyButton) {
-            await copyCode(copyButton.dataset.copy);
+            await copyCode(copyButton.dataset.copyTransfer);
         }
         if (refreshButton) {
-            regenerateCode(refreshButton.dataset.refresh);
-        }
-        if (completeButton) {
-            completeRecord(completeButton.dataset.complete);
+            await regenerateCode(refreshButton.dataset.refreshTransfer);
         }
     });
 }
 
 function init() {
     loadAuth();
-    loadRecords();
-    seedRecords();
-    loadRecords();
+    loadSource();
     bindEvents();
     setView();
     if (state.authenticated) {
-        renderDashboard();
+        refreshDashboard().catch(() => {
+            // Errors are handled in refreshDashboard.
+        });
     }
 }
 

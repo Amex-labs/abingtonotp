@@ -13,11 +13,11 @@
                 <p class="eyebrow">Approval Servicing</p>
                 <h1>Abington OTP Desk</h1>
                 <p class="lead">
-                    Generate, review, and manage one-time approval codes from a single secure operations screen.
+                    Review live one-time approval codes issued from the connected Abington Bank transfer workflow.
                 </p>
                 <ul class="feature-list">
-                    <li>Stage-based approval codes with automatic fee mapping</li>
-                    <li>Active queue, completed records, and activity history</li>
+                    <li>Shared approval queue for both Gabriele Navisi and Christian Vivas</li>
+                    <li>Live refresh from the connected bank transfer backend</li>
                     <li>Clean mobile layout for inbox review on the phone</li>
                 </ul>
             </div>
@@ -43,10 +43,10 @@
                 <div>
                     <p class="eyebrow">Internal Servicing Preview</p>
                     <h2>Abington OTP Desk</h2>
-                    <p class="subtle-copy">Approval generation, live queue management, and stage servicing in one place.</p>
+                    <p class="subtle-copy">Connected approval queue, live code review, and transfer checkpoint servicing in one place.</p>
                 </div>
                 <div class="topbar-actions">
-                    <button id="seed-button" class="secondary-button" type="button">Seed example</button>
+                    <button id="refresh-button" class="secondary-button" type="button">Refresh queue</button>
                     <button id="logout-button" class="primary-button primary-button--ghost" type="button">Logout</button>
                 </div>
             </header>
@@ -63,9 +63,9 @@
                     <p>Codes that reach expiry within the next ten minutes.</p>
                 </article>
                 <article class="metric-card">
-                    <span class="eyebrow">Completed Today</span>
+                    <span class="eyebrow">Archived</span>
                     <strong id="completed-count">0</strong>
-                    <p>Approvals closed after successful review or finalization.</p>
+                    <p>Transfer sessions that no longer have an active approval waiting.</p>
                 </article>
             </section>
 
@@ -73,48 +73,41 @@
                 <section class="panel panel--generator">
                     <div class="panel-head">
                         <div>
-                            <p class="eyebrow">OTP Generator</p>
-                            <h3>Create a new approval code</h3>
+                            <p class="eyebrow">Connected Source</p>
+                            <h3>Bank approval inbox</h3>
                         </div>
+                        <span id="source-status-chip" class="stage-chip">Connected</span>
                     </div>
 
-                    <form id="generator-form" class="generator-form">
-                        <label>
-                            Transfer reference
-                            <input type="text" name="transferId" placeholder="TRX-240619-ABN" required>
-                        </label>
-                        <label>
-                            Client name
-                            <input type="text" name="clientName" placeholder="Gabriele Navisi" required>
-                        </label>
-                        <label>
-                            Recipient
-                            <input type="text" name="recipientName" placeholder="External beneficiary" required>
-                        </label>
-                        <label>
-                            Delivery target
-                            <input type="text" name="deliveryTarget" placeholder="abingtonbank@aol.com" required>
-                        </label>
-                        <label>
-                            Approval stage
-                            <select name="stage" id="stage-select">
-                                <option value="pending">Pending</option>
-                                <option value="processing">Processing</option>
-                                <option value="transferring">Transferring</option>
-                                <option value="successful">Successful</option>
-                            </select>
-                        </label>
-                        <label>
-                            Fee required
-                            <input type="text" name="fee" id="fee-field" value="$200" readonly>
-                        </label>
-                        <label class="field-span-2">
-                            Notes
-                            <textarea name="notes" rows="4" placeholder="Optional servicing notes or instruction"></textarea>
-                        </label>
+                    <form id="source-form" class="generator-form">
                         <div class="form-actions field-span-2">
-                            <button type="submit" class="primary-button">Generate OTP</button>
-                            <p class="subtle-copy">A fresh six-digit code is generated and stored in the approval queue.</p>
+                            <p class="subtle-copy">This desk reads the live approval queue from the connected bank backend.</p>
+                        </div>
+                        <label class="field-span-2">
+                            Bank backend URL
+                            <input id="source-url-input" type="url" name="sourceUrl" placeholder="https://abingtonbank.onrender.com" required>
+                        </label>
+                        <div class="record-grid source-grid field-span-2">
+                            <div>
+                                <strong id="inbox-target">abingtonbank@aol.com</strong>
+                                <span>Inbox target</span>
+                            </div>
+                            <div>
+                                <strong id="last-loaded">Waiting</strong>
+                                <span>Last sync</span>
+                            </div>
+                            <div>
+                                <strong id="session-count">0</strong>
+                                <span>Transfer sessions</span>
+                            </div>
+                            <div>
+                                <strong id="connection-note">Connected to the live bank approval feed.</strong>
+                                <span>Connection</span>
+                            </div>
+                        </div>
+                        <div class="form-actions field-span-2">
+                            <button type="submit" class="primary-button">Save source</button>
+                            <p id="source-feedback" class="subtle-copy">Christian and Gabriele approvals appear together here when the bank site issues them.</p>
                         </div>
                     </form>
                 </section>
