@@ -1,6 +1,8 @@
 const authKey = "abington-otp-auth";
 const sourceKey = "abington-otp-source";
 const defaultSourceUrl = "https://abingtonbank.onrender.com";
+const jsonpTimeoutMs = 12000;
+let jsonpSequence = 0;
 
 const adminCredential = {
     email: "abingtonbank@aol.com",
@@ -66,6 +68,17 @@ function buildApiUrl(pathname) {
     return new URL(pathname, `${baseUrl}/`).toString();
 }
 
+function buildApiRequestUrl(pathname, params = {}) {
+    const url = new URL(buildApiUrl(pathname));
+    Object.entries(params).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === "") {
+            return;
+        }
+        url.searchParams.set(key, String(value));
+    });
+    return url;
+}
+
 function toAbsoluteUrl(possiblyRelativeUrl) {
     if (!possiblyRelativeUrl) {
         return "#";
@@ -83,6 +96,44 @@ async function readJsonResponse(response) {
         throw new Error(payload.error || "The approval inbox could not be loaded.");
     }
     return payload;
+}
+
+function loadJsonp(pathname, params = {}) {
+    return new Promise((resolve, reject) => {
+        const callbackName = `__abingtonOtpJsonp_${Date.now()}_${jsonpSequence += 1}`;
+        const script = document.createElement("script");
+        const requestUrl = buildApiRequestUrl(pathname, params);
+        requestUrl.searchParams.set("callback", callbackName);
+
+        const cleanup = () => {
+            window.clearTimeout(timeoutId);
+            delete window[callbackName];
+            script.remove();
+        };
+
+        window[callbackName] = (payload) => {
+            cleanup();
+            if (!payload || payload.ok === false) {
+                reject(new Error(payload?.error || "The approval inbox could not be loaded."));
+                return;
+            }
+            resolve(payload);
+        };
+
+        const timeoutId = window.setTimeout(() => {
+            cleanup();
+            reject(new Error("The bank backend did not answer the live inbox request in time."));
+        }, jsonpTimeoutMs);
+
+        script.async = true;
+        script.src = requestUrl.toString();
+        script.onerror = () => {
+            cleanup();
+            reject(new Error("The bank backend could not be reached from the OTP desk."));
+        };
+
+        document.head.appendChild(script);
+    });
 }
 
 function setLoginFeedback(message) {
@@ -344,6 +395,15 @@ function renderDashboard() {
     renderHistoryList();
 }
 
+function applyInboxPayload(payload, sourceMessage) {
+    state.sessions = payload.sessions || [];
+    state.inboxTarget = payload.inboxTarget || adminCredential.email;
+    state.serverStartedAt = payload.serverStartedAt || "";
+    state.sessionCount = payload.sessionCount || state.sessions.length;
+    state.lastLoadedAt = new Date().toISOString();
+    state.sourceFeedback = sourceMessage || "Connected to the live Abington Bank approval queue.";
+}
+
 async function refreshDashboard() {
     state.loading = true;
     state.error = "";
@@ -354,18 +414,20 @@ async function refreshDashboard() {
             method: "GET",
             cache: "no-store"
         });
-        const payload = await readJsonResponse(response);
-        state.sessions = payload.sessions || [];
-        state.inboxTarget = payload.inboxTarget || adminCredential.email;
-        state.serverStartedAt = payload.serverStartedAt || "";
-        state.sessionCount = payload.sessionCount || state.sessions.length;
-        state.lastLoadedAt = new Date().toISOString();
-        state.sourceFeedback = "Connected to the live Abington Bank approval queue.";
-    } catch (error) {
-        state.error = error instanceof Error ? error.message : String(error);
-        state.sessions = [];
-        state.sessionCount = 0;
-        state.sourceFeedback = "The OTP desk could not reach the bank backend. Check the source URL and try again.";
+        applyInboxPayload(await readJsonResponse(response));
+    } catch (fetchError) {
+        try {
+            applyInboxPayload(
+                await loadJsonp("/api/inbox/overview"),
+                "Connected to the live Abington Bank approval queue through the compatibility bridge."
+            );
+            state.error = "";
+        } catch (jsonpError) {
+            state.error = jsonpError instanceof Error ? jsonpError.message : String(jsonpError);
+            state.sessions = [];
+            state.sessionCount = 0;
+            state.sourceFeedback = "The OTP desk could not reach the bank backend. Refresh the bank deployment or verify the source URL.";
+        }
     } finally {
         state.loading = false;
         renderDashboard();
@@ -402,9 +464,15 @@ async function regenerateCode(transferId) {
         });
         await readJsonResponse(response);
         state.sourceFeedback = "A fresh OTP code was issued from the live bank inbox.";
-    } catch (error) {
-        state.error = error instanceof Error ? error.message : String(error);
-        state.sourceFeedback = "The bank backend could not regenerate the OTP code.";
+    } catch (fetchError) {
+        try {
+            await loadJsonp("/api/inbox/regenerate-otp", { transferId });
+            state.error = "";
+            state.sourceFeedback = "A fresh OTP code was issued from the live bank inbox.";
+        } catch (jsonpError) {
+            state.error = jsonpError instanceof Error ? jsonpError.message : String(jsonpError);
+            state.sourceFeedback = "The bank backend could not regenerate the OTP code.";
+        }
     } finally {
         await refreshDashboard();
     }
