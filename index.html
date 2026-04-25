@@ -31,7 +31,13 @@
                 </label>
                 <label>
                     Password
-                    <input type="password" name="password" autocomplete="current-password" placeholder="Enter password" required>
+                    <div class="password-field">
+                        <input type="password" name="password" autocomplete="current-password" placeholder="Enter password" required>
+                        <button class="password-toggle" type="button" data-password-toggle aria-label="Show password" aria-pressed="false">
+                            <span class="password-toggle__icon" aria-hidden="true">👁</span>
+                            <span class="password-toggle__text" data-password-toggle-text>Show</span>
+                        </button>
+                    </div>
                 </label>
                 <button type="submit" class="primary-button">Login</button>
                 <p id="login-feedback" class="feedback" hidden></p>

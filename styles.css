@@ -157,6 +157,51 @@ button {
     color: inherit;
 }
 
+.password-field {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.password-field input {
+    padding-right: 112px;
+}
+
+.password-toggle {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 38px;
+    padding: 0 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(31, 71, 53, 0.12);
+    background: rgba(248, 250, 247, 0.92);
+    color: #1f6b49;
+    font-size: 0.82rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 180ms ease, border-color 180ms ease, transform 180ms ease;
+}
+
+.password-toggle:hover {
+    background: #ffffff;
+    border-color: rgba(31, 71, 53, 0.26);
+}
+
+.password-toggle:focus-visible {
+    outline: 2px solid rgba(31, 71, 53, 0.28);
+    outline-offset: 2px;
+}
+
+.password-toggle__icon {
+    font-size: 0.95rem;
+    line-height: 1;
+}
+
 .generator-form input,
 .generator-form select,
 .generator-form textarea {

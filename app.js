@@ -150,6 +150,35 @@ function setSourceFeedback(message) {
     target.textContent = message || "Christian and Gabriele approvals appear together here when the bank site issues them.";
 }
 
+function bindPasswordToggles() {
+    document.querySelectorAll("[data-password-toggle]").forEach((button) => {
+        if (button.dataset.passwordToggleBound === "true") {
+            return;
+        }
+        const field = button.closest(".password-field");
+        const input = field?.querySelector("input");
+        const label = button.querySelector("[data-password-toggle-text]");
+        if (!input) {
+            return;
+        }
+
+        const setVisible = (visible) => {
+            input.type = visible ? "text" : "password";
+            button.setAttribute("aria-label", visible ? "Hide password" : "Show password");
+            button.setAttribute("aria-pressed", String(visible));
+            if (label) {
+                label.textContent = visible ? "Hide" : "Show";
+            }
+        };
+
+        setVisible(false);
+        button.addEventListener("click", () => {
+            setVisible(input.type === "password");
+        });
+        button.dataset.passwordToggleBound = "true";
+    });
+}
+
 function saveAuth() {
     try {
         window.sessionStorage.setItem(authKey, JSON.stringify({ authenticated: state.authenticated }));
@@ -542,6 +571,7 @@ function bindEvents() {
 function init() {
     loadAuth();
     loadSource();
+    bindPasswordToggles();
     bindEvents();
     setView();
     if (state.authenticated) {
